@@ -54,17 +54,11 @@ export async function bootstrapIm(): Promise<void> {
   // managers and #page-chats are live. selectTab(CHATLIST) already ran inside
   // start(), so is-left-column-shown is set and the bar shows immediately on
   // mobile widths.
+  // Svipe: mounts the tab bar, which on boot selects Reels (default surface on
+  // mobile) and honours a ?svipeReel=<code> share deep-link. This funnel runs on
+  // both a boot-signed-in start and a just-completed login, so it covers either.
   const {mountMobileTabBar} = await import('@components/svipeMobileTabs/mobileTabBar');
   mountMobileTabBar();
-
-  // Svipe: a share link (svipe.uz/<code>) that deep-links a logged-in web user
-  // lands here as ?svipeReel=<code>. This funnel runs on both a boot-signed-in
-  // start and a just-completed login, so the shared reel opens either way.
-  const reelCode = new URLSearchParams(location.search).get('svipeReel');
-  if(reelCode) {
-    const {default: reelsController} = await import('@components/svipeReels/reelsController');
-    reelsController.open({seedCode: reelCode});
-  }
   // start() toggles body.is-left-column-shown synchronously
   // (appImManager.selectTab(CHATLIST)). The .main-column transform/opacity
   // transition in _chats.scss is gated by :not(.has-auth-pages) so the bar

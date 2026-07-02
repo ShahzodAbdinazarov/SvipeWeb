@@ -1,8 +1,8 @@
-import {createEffect, For, onCleanup} from 'solid-js';
-import {createSignal} from 'solid-js';
+import {createEffect, createSignal, For, onCleanup, onMount} from 'solid-js';
 import {render} from 'solid-js/web';
 import lottieLoader from '@lib/rlottie/lottieLoader';
 import type RLottiePlayer from '@lib/rlottie/rlottiePlayer';
+import mediaSizes from '@helpers/mediaSizes';
 import appImManager, {APP_TABS} from '@lib/appImManager';
 import reelsController from '@components/svipeReels/reelsController';
 
@@ -40,7 +40,8 @@ const TABS: Tab[] = [
 ];
 
 export default function MobileTabBar() {
-  const [active, setActive] = createSignal<TabId>('chats');
+  // Reels is the default surface (mirrors Android's POSITION_REELS landing).
+  const [active, setActive] = createSignal<TabId>('reels');
   const players = new Map<TabId, RLottiePlayer>();
   let disposed = false;
 
@@ -95,10 +96,23 @@ export default function MobileTabBar() {
     setActive('chats');
   };
 
-  const openReels = () => {
+  const openReels = (seedCode?: string) => {
     setActive('reels');
-    reelsController.open({onClose: () => setActive('chats')});
+    reelsController.open({seedCode, onClose: () => setActive('chats')});
   };
+
+  // Reels opens on boot: always when a share deep-link (?svipeReel) is present
+  // (even on desktop), and by default on mobile (Reels is the landing tab).
+  // On desktop with no deep-link we stay on the normal chat UI.
+  onMount(() => {
+    if(reelsController.isOpen) return;
+    const seedCode = new URLSearchParams(location.search).get('svipeReel') || undefined;
+    if(seedCode || mediaSizes.isMobile) {
+      openReels(seedCode);
+    } else {
+      setActive('chats');
+    }
+  });
 
   const onTabClick = (tab: Tab) => {
     if(!tab.enabled) return;
