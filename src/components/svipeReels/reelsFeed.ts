@@ -139,6 +139,22 @@ export async function getReelsFeed(): Promise<ReelItem[]> {
   return getSeedFeed();
 }
 
+/**
+ * Resolve a share {code} (from a svipe.uz/{code} link) to a single playable
+ * reel via the backend, so a deep-link can open that exact video first.
+ */
+export async function getSeedReel(code: string): Promise<ReelItem | undefined> {
+  try {
+    // Share resolution is public reference data — no backend auth needed.
+    const ref = await svipeGetJson<BackendFeedItem>(`/v1/share/${encodeURIComponent(code)}`, false);
+    if(!ref) return undefined;
+    const reel = await resolveFeedItem(ref);
+    return reel;
+  } catch(e) {
+    return undefined;
+  }
+}
+
 /** Next page (backend only; cursor-paginated). Returns [] when exhausted or on the seed fallback. */
 export async function loadMoreReels(): Promise<ReelItem[]> {
   if(!usingBackend || nextCursor === null || nextCursor === undefined) return [];

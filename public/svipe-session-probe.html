@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Svipe session probe</title>
+</head>
+<body>
+<script>
+/*
+ * Cross-origin session probe. Served same-origin as the Svipe web app
+ * (web.svipe.uz), so it reads the app's own localStorage MTProto session.
+ * A share landing (svipe.uz/<code>) embeds this in a hidden iframe and, if a
+ * session is present, deep-links the user straight into the web app.
+ * Only a boolean is ever reported — no auth material leaves this frame.
+ */
+(function() {
+  function hasSession() {
+    try {
+      var a1 = localStorage.getItem('account1');
+      if(a1 && JSON.parse(a1).userId) return true;
+      var ua = localStorage.getItem('user_auth');
+      if(ua && JSON.parse(ua).id) return true;
+      return !!localStorage.getItem('dc2_auth_key');
+    } catch(e) {
+      return false;
+    }
+  }
+
+  var loggedIn = hasSession();
+
+  function report(targetOrigin) {
+    try {
+      (window.parent || window).postMessage({svipeSession: loggedIn}, targetOrigin || '*');
+    } catch(e) {}
+  }
+
+  // Answer on request (parent posts to us) and announce once unprompted.
+  window.addEventListener('message', function(e) {
+    report(e.origin);
+  });
+  report('*');
+})();
+</script>
+</body>
+</html>

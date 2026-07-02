@@ -37,8 +37,8 @@ export async function svipeFetch(path: string, options: SvipeFetchOptions = {}):
   return res;
 }
 
-export async function svipeGetJson<T = any>(path: string): Promise<T | undefined> {
-  const res = await svipeFetch(path);
+export async function svipeGetJson<T = any>(path: string, auth = true): Promise<T | undefined> {
+  const res = await svipeFetch(path, {auth});
   if(!res.ok) return undefined;
   return res.json().catch((): undefined => undefined);
 }

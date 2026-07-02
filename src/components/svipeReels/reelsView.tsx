@@ -1,6 +1,6 @@
 import {createSignal, For, onCleanup, onMount, Show} from 'solid-js';
 import getDocumentURL from '@appManagers/utils/docs/getDocumentURL';
-import {getReelsFeed, loadMoreReels, ReelItem} from './reelsFeed';
+import {getReelsFeed, getSeedReel, loadMoreReels, ReelItem} from './reelsFeed';
 
 import './reelsView.scss';
 
@@ -10,7 +10,7 @@ import './reelsView.scss';
  * and lazily wires that <video> to tweb's service-worker stream URL
  * (getDocumentURL -> 'stream/…'), playing the active one and pausing the rest.
  */
-export default function ReelsView(props: {onExit: () => void}) {
+export default function ReelsView(props: {seedCode?: string; onExit: () => void}) {
   const [items, setItems] = createSignal<ReelItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [failed, setFailed] = createSignal(false);
@@ -69,9 +69,14 @@ export default function ReelsView(props: {onExit: () => void}) {
     }, {threshold: [0, 0.6, 1]});
 
     try {
+      // A shared reel (deep-link) is resolved first and shown at index 0; the
+      // scroll-snap scroller starts at the top so it plays immediately.
+      const seed = props.seedCode ? await getSeedReel(props.seedCode) : undefined;
       const feed = await getReelsFeed();
-      setItems(feed);
-      setFailed(feed.length === 0);
+      const rest = seed ? feed.filter((r) => !(r.peerId === seed.peerId && r.mid === seed.mid)) : feed;
+      const all = seed ? [seed, ...rest] : feed;
+      setItems(all);
+      setFailed(all.length === 0);
     } catch(e) {
       setFailed(true);
     } finally {

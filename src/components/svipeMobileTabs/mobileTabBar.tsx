@@ -97,7 +97,7 @@ export default function MobileTabBar() {
 
   const openReels = () => {
     setActive('reels');
-    reelsController.open(() => setActive('chats'));
+    reelsController.open({onClose: () => setActive('chats')});
   };
 
   const onTabClick = (tab: Tab) => {

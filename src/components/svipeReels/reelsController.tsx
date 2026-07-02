@@ -23,14 +23,14 @@ class ReelsController {
     return !!this.dispose;
   }
 
-  public open(onClose?: () => void) {
+  public open(opts?: {seedCode?: string; onClose?: () => void}) {
     if(this.dispose) return;
-    this.onCloseCb = onClose;
+    this.onCloseCb = opts?.onClose;
 
     const mount = document.getElementById('reels-viewer') || getOverlayRoot();
     document.body.classList.add(OPEN_BODY_CLASS);
 
-    this.dispose = render(() => <ReelsView onExit={() => this.close()} />, mount);
+    this.dispose = render(() => <ReelsView seedCode={opts?.seedCode} onExit={() => this.close()} />, mount);
 
     appNavigationController.pushItem({
       type: 'reels',
