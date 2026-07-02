@@ -24,14 +24,16 @@
 
       width: calc(100% - 16px);
       max-width: 360px;
-      height: 56px;
+      height: 60px;
       padding: 0 6px;
 
-      border-radius: 28px;
-      background: var(--surface-color, rgba(28, 28, 30, .82));
-      backdrop-filter: blur(18px) saturate(1.6);
-      -webkit-backdrop-filter: blur(18px) saturate(1.6);
-      box-shadow: 0 6px 24px rgba(0, 0, 0, .28);
+      // Android GlassTabView look: floating dark blurred pill, radius = height/2.
+      border-radius: 30px;
+      background: rgba(24, 24, 27, .72);
+      backdrop-filter: blur(20px) saturate(1.7);
+      -webkit-backdrop-filter: blur(20px) saturate(1.7);
+      border: 1px solid rgba(255, 255, 255, .08);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .34);
     }
   }
 }
@@ -47,26 +49,48 @@
 
   border: none;
   background: transparent;
-  color: var(--secondary-text-color, rgba(255, 255, 255, .55));
+  color: rgba(255, 255, 255, .6);
   cursor: pointer;
-  border-radius: 20px;
+  border-radius: 22px;
   transition: color .15s, opacity .15s;
+  -webkit-tap-highlight-color: transparent;
 
   &--active {
     color: var(--primary-color, #3390ec);
   }
 
   &--disabled {
-    opacity: .32;
+    opacity: .34;
     cursor: default;
   }
 }
 
 .svipe-tabbar__icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
   line-height: 0;
+
+  // rlottie appends its own canvas; when it's up, drop the SVG fallback.
+  &.has-lottie .svipe-tabbar__svg {
+    display: none;
+  }
+
+  canvas {
+    width: 30px !important;
+    height: 30px !important;
+  }
+}
+
+.svipe-tabbar__icon--profile {
+  color: rgba(255, 255, 255, .6);
+}
+
+.svipe-tabbar__svg {
+  color: inherit;
 }
 
 .svipe-tabbar__label {
