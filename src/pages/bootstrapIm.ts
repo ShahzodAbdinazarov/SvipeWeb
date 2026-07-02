@@ -49,6 +49,13 @@ export async function bootstrapIm(): Promise<void> {
     (window as any).Recorder = recorder.default;
   }
   appDialogsManager.start();
+
+  // Svipe: mount the mobile bottom tab bar (Reels / Chats / …) now that the
+  // managers and #page-chats are live. selectTab(CHATLIST) already ran inside
+  // start(), so is-left-column-shown is set and the bar shows immediately on
+  // mobile widths.
+  const {mountMobileTabBar} = await import('@components/svipeMobileTabs/mobileTabBar');
+  mountMobileTabBar();
   // start() toggles body.is-left-column-shown synchronously
   // (appImManager.selectTab(CHATLIST)). The .main-column transform/opacity
   // transition in _chats.scss is gated by :not(.has-auth-pages) so the bar

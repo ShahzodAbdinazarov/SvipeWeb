@@ -1,0 +1,79 @@
+@use "../../scss/mixins/respondTo" as *;
+
+.svipe-tabbar {
+  display: none;
+}
+
+// Only on phone widths, and only over the chat-list / reels surfaces — never
+// inside an open chat. selectTab() maintains body.is-left-column-shown; the
+// reels controller adds body.svipe-reels-open.
+@include respond-to(handhelds) {
+  body.is-left-column-shown,
+  body.svipe-reels-open {
+    .svipe-tabbar {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(8px + env(safe-area-inset-bottom));
+      z-index: 5;
+
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 2px;
+
+      width: calc(100% - 16px);
+      max-width: 360px;
+      height: 56px;
+      padding: 0 6px;
+
+      border-radius: 28px;
+      background: var(--surface-color, rgba(28, 28, 30, .82));
+      backdrop-filter: blur(18px) saturate(1.6);
+      -webkit-backdrop-filter: blur(18px) saturate(1.6);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, .28);
+    }
+  }
+}
+
+.svipe-tabbar__tab {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+
+  border: none;
+  background: transparent;
+  color: var(--secondary-text-color, rgba(255, 255, 255, .55));
+  cursor: pointer;
+  border-radius: 20px;
+  transition: color .15s, opacity .15s;
+
+  &--active {
+    color: var(--primary-color, #3390ec);
+  }
+
+  &--disabled {
+    opacity: .32;
+    cursor: default;
+  }
+}
+
+.svipe-tabbar__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.svipe-tabbar__label {
+  font-size: 10px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
