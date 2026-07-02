@@ -1,6 +1,6 @@
 import {createSignal, For, onCleanup, onMount, Show} from 'solid-js';
 import getDocumentURL from '@appManagers/utils/docs/getDocumentURL';
-import {getReelsFeed, ReelItem} from './reelsFeed';
+import {getReelsFeed, loadMoreReels, ReelItem} from './reelsFeed';
 
 import './reelsView.scss';
 
@@ -18,6 +18,19 @@ export default function ReelsView(props: {onExit: () => void}) {
 
   const videoEls = new Map<number, HTMLVideoElement>();
   let observer: IntersectionObserver;
+  let loadingMore = false;
+
+  // Grow the feed as the viewer nears the end (backend cursor pagination).
+  const maybeLoadMore = async(activeIndex: number) => {
+    if(loadingMore || activeIndex < items().length - 3) return;
+    loadingMore = true;
+    try {
+      const more = await loadMoreReels();
+      if(more.length) setItems((prev) => [...prev, ...more]);
+    } finally {
+      loadingMore = false;
+    }
+  };
 
   const activate = (video: HTMLVideoElement) => {
     if(!video.src) {
@@ -46,8 +59,12 @@ export default function ReelsView(props: {onExit: () => void}) {
     observer = new IntersectionObserver((entries) => {
       for(const entry of entries) {
         const video = entry.target as HTMLVideoElement;
-        if(entry.isIntersecting && entry.intersectionRatio >= 0.6) activate(video);
-        else deactivate(video);
+        if(entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          activate(video);
+          maybeLoadMore(Number(video.dataset.index || 0));
+        } else {
+          deactivate(video);
+        }
       }
     }, {threshold: [0, 0.6, 1]});
 
