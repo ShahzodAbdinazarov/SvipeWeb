@@ -18,6 +18,12 @@
     --reels-inset: calc(68px + env(safe-area-inset-bottom));
   }
 
+  // Seeded (opened from the Search grid): no tab bar — Android's discover-seed
+  // mode. Chrome hugs the bottom edge instead.
+  &--seeded {
+    --reels-inset: calc(12px + env(safe-area-inset-bottom));
+  }
+
   &__scroller {
     height: 100%;
     overflow-y: auto;
@@ -303,7 +309,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(var(--reels-inset) - 10px);
+    // Fully above the tab bar's top edge (--reels-inset), not behind it.
+    bottom: calc(var(--reels-inset) + 6px);
     z-index: 2;
     height: 20px;
     display: flex;

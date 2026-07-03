@@ -117,7 +117,7 @@ export default function ReelsView(props: {
   };
 
   return (
-    <div class="svipe-reels">
+    <div class="svipe-reels" classList={{'svipe-reels--seeded': props.fromSearch}}>
       <div class="svipe-reels__top" classList={{'svipe-reels__chrome--hidden': peek()}}>
         {/* Back arrow only in seeded (search) mode — Android parity. The main
             reels tab has no X: the bottom tab bar is the exit. Desktop (no tab

@@ -1,0 +1,146 @@
+// Android own-profile page look on the dark web-mobile chrome: centered
+// header, 4-button glass actions row, iOS-style info card, posts grid.
+.svipe-profile {
+  position: fixed;
+  inset: 0;
+  z-index: 3; // under the stories viewer / reels (z-4) and the tab bar (z-5)
+  background: #0f0f10;
+  color: #fff;
+
+  &__content {
+    height: 100%;
+
+    // Scrollable wraps the content into its own .scrollable container.
+    .scrollable {
+      padding: calc(16px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom));
+    }
+  }
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 0 14px;
+    text-align: center;
+  }
+
+  &__avatar .avatar {
+    width: 96px !important;
+    height: 96px !important;
+  }
+
+  &__name {
+    font-size: 20px;
+    font-weight: 700;
+
+    .peer-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+  }
+
+  &__status {
+    font-size: 13px;
+    color: var(--primary-color, #3390ec);
+  }
+
+  // Android ProfileActionsView: equal-width cells, icon over label.
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 4px 2px 14px;
+  }
+
+  &__action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 64px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .07);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active {
+      background: rgba(255, 255, 255, .12);
+    }
+
+    svg {
+      color: var(--primary-color, #3390ec);
+    }
+  }
+
+  &__card {
+    margin: 0 2px 14px;
+    border-radius: 14px;
+    background: #1c1c1e;
+    overflow: hidden;
+  }
+
+  &__row {
+    padding: 10px 16px;
+    cursor: pointer;
+
+    & + & {
+      border-top: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, .05);
+    }
+  }
+
+  &__row-value {
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--multiline {
+      white-space: normal;
+      word-break: break-word;
+    }
+  }
+
+  &__row-label {
+    font-size: 12.5px;
+    color: #9e9e9e;
+    margin-top: 2px;
+  }
+
+  &__posts-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 4px 8px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  &__posts-count {
+    font-size: 13px;
+    font-weight: 500;
+    color: #9e9e9e;
+  }
+
+  &__posts {
+    margin: 0 -6px;
+    min-height: 120px;
+  }
+
+  &__posts-empty {
+    padding: 32px 0;
+    text-align: center;
+    font-size: 14px;
+    color: #9e9e9e;
+  }
+}

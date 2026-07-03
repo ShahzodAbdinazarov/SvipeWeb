@@ -8,11 +8,13 @@ import pause from '@helpers/schedulers/pause';
 import rootScope from '@lib/rootScope';
 import appImManager, {APP_TABS} from '@lib/appImManager';
 import appSidebarLeft from '@components/sidebarLeft';
-import {AppSettingsTab} from '@components/solidJsTabs';
-import AppSharedMediaTab from '@components/sidebarRight/tabs/sharedMediaTab';
+import {AppSettingsTab, getEditProfileInitArgs} from '@components/solidJsTabs';
+import {AppContactsTab, AppEditProfileTab} from '@components/solidJsTabs/tabs';
 import {AvatarNew} from '@components/avatarNew';
 import reelsController from '@components/svipeReels/reelsController';
 import searchController from '@components/svipeSearch/searchController';
+import profileController from '@components/svipeProfile/profileController';
+import type {ProfileAction} from '@components/svipeProfile/profileView';
 
 import './mobileTabBar.scss';
 
@@ -20,9 +22,13 @@ import './mobileTabBar.scss';
  * Mobile bottom tab bar mirroring the Svipe Android app (MainTabsActivity):
  * Reels, Chats, Search, Settings, Profile — left to right. The icons ARE the
  * Android Lottie files (res/raw/tab_*.json, copied to public/assets/tgs), played
- * outline<->filled on select exactly like the native GlassTabView. A static SVG
- * sits behind each icon as a fallback until (or unless) the Lottie renders, so
- * the bar is never blank. Profile shows the user's avatar, like Android.
+ * outline<->filled on select exactly like the native GlassTabView. Profile
+ * shows the user's avatar, like Android.
+ *
+ * Visibility follows the Android rule exactly: the bar exists only on the five
+ * root tab surfaces. Anything pushed on top — an open chat, a slider sub-tab
+ * (Edit Profile, Archive…), the chat-list search, a seeded (search-grid) reels
+ * viewer, any dark overlay — hides it.
  */
 type TabId = 'reels' | 'chats' | 'search' | 'settings' | 'profile';
 
@@ -48,11 +54,41 @@ const TABS: Tab[] = [
 export default function MobileTabBar() {
   // Reels is the default surface (mirrors Android's POSITION_REELS landing).
   const [active, setActive] = createSignal<TabId>('reels');
-  // Hidden under any dark overlay: stories viewer, media viewer, popups —
-  // they all share z-index 4 with the reels surface, but the bar is z-5.
-  const [overlayHidden, setOverlayHidden] = createSignal(false);
+  const [visible, setVisible] = createSignal(false);
   const players = new Map<TabId, RLottiePlayer>();
   let disposed = false;
+
+  // Which of our roots currently owns the left slider (only Settings lives
+  // there now), and where to return when a handed-off slider sub-tab closes.
+  let sliderRootTab: 'settings' | undefined;
+  let returnTo: 'profile' | undefined;
+
+  const columnLeft = document.getElementById('column-left');
+  let searchHost: HTMLElement | undefined;
+  const searchHostEl = () =>
+    searchHost ??= (document.getElementById('search-container')?.parentElement?.parentElement as HTMLElement) || undefined;
+  const sliderDepth = () => ((appSidebarLeft as any).historyTabIds?.length as number) ?? 0;
+
+  // The Android visibility rule, evaluated from actual UI state.
+  const computeVisible = (): boolean => {
+    if(overlayCounter.isOverlayActive) return false;
+    const body = document.body.classList;
+    if(body.contains('svipe-reels-open')) {
+      // Seeded reels (from the grid) is a pushed screen — no bar (Android).
+      return !body.contains('svipe-reels-seeded');
+    }
+    if(body.contains('svipe-search-open') || body.contains('svipe-profile-open')) return true;
+    if(!body.contains('is-left-column-shown')) return false; // inside a chat
+    if(columnLeft?.classList.contains('has-open-tabs')) {
+      // Only our Settings ROOT keeps the bar; deeper tabs and every other
+      // slider surface (Edit Profile, Archive, New Chat…) hide it.
+      return sliderRootTab === 'settings' && sliderDepth() <= 1;
+    }
+    if(searchHostEl()?.classList.contains('is-search-active')) return false; // chat-list search
+    return true;
+  };
+
+  const update = () => setVisible(computeVisible());
 
   const applyIconState = (player: RLottiePlayer, isActive: boolean) => {
     player.setColor(isActive ? ACTIVE_COLOR : INACTIVE_COLOR, true);
@@ -93,66 +129,110 @@ export default function MobileTabBar() {
     players.forEach((player, id) => applyIconState(player, id === cur));
   });
 
+  // What the highlight should fall back to when a surface on top goes away.
+  const surfaceUnderneath = (): TabId =>
+    reelsController.isOpen ? 'reels' :
+      searchController.isOpen ? 'search' :
+        profileController.isOpen ? 'profile' : 'chats';
+
   // Track tweb's own tab switches (opening/closing a chat) so the highlight
   // follows the chat surface when no svipe surface is open.
   const onTabChanging = (tabId: number) => {
-    if(reelsController.isOpen || searchController.isOpen) return;
-    if(tabId === APP_TABS.CHATLIST && (active() === 'reels' || active() === 'chats')) setActive('chats');
+    if(!reelsController.isOpen && !searchController.isOpen && !profileController.isOpen &&
+      tabId === APP_TABS.CHATLIST && (active() === 'reels' || active() === 'chats')) {
+      setActive('chats');
+    }
+    // selectTab runs before the body class flips — recompute after it settles.
+    queueMicrotask(update);
   };
   appImManager.addEventListener('tab_changing', onTabChanging);
 
-  const onOverlayChange = (isActive: boolean) => setOverlayHidden(isActive);
+  const onOverlayChange = () => update();
   overlayCounter.addEventListener('change', onOverlayChange);
 
-  // Backing out of the Settings/Profile slider tabs doesn't fire any tab
-  // event — watch the sidebar's has-open-tabs class instead.
+  // DOM state watchers: body classes (svipe surfaces / column switches), the
+  // slider's has-open-tabs flag, and tab pushes/pops inside the slider.
+  let bodyObserver: MutationObserver | undefined;
+  let columnObserver: MutationObserver | undefined;
   let sliderObserver: MutationObserver | undefined;
-  onMount(() => {
-    const columnLeft = document.getElementById('column-left');
-    if(!columnLeft) return;
-    sliderObserver = new MutationObserver(() => {
-      if(columnLeft.classList.contains('has-open-tabs')) return;
-      if(active() === 'settings' || active() === 'profile') {
+  let hadOpenTabs = false;
+
+  const onColumnMutate = () => {
+    const has = !!columnLeft?.classList.contains('has-open-tabs');
+    if(hadOpenTabs && !has) {
+      // The slider stack fully closed.
+      sliderRootTab = undefined;
+      if(returnTo === 'profile') {
+        returnTo = undefined;
+        openProfileSurface(); // Android back-flow: sub-screen → profile
+      } else if(active() === 'settings' || active() === 'profile') {
         setActive(surfaceUnderneath());
       }
-    });
-    sliderObserver.observe(columnLeft, {attributes: true, attributeFilter: ['class']});
+    }
+    hadOpenTabs = has;
+    update();
+  };
+
+  onMount(() => {
+    hadOpenTabs = !!columnLeft?.classList.contains('has-open-tabs');
+
+    bodyObserver = new MutationObserver(update);
+    bodyObserver.observe(document.body, {attributes: true, attributeFilter: ['class']});
+
+    if(columnLeft) {
+      columnObserver = new MutationObserver(onColumnMutate);
+      columnObserver.observe(columnLeft, {attributes: true, attributeFilter: ['class']});
+
+      const sliderEl = columnLeft.querySelector('.sidebar-slider');
+      if(sliderEl) {
+        // Fires on tab transitions (push/pop) and on is-search-active flips.
+        sliderObserver = new MutationObserver(update);
+        sliderObserver.observe(sliderEl, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']});
+      }
+    }
+
+    update();
   });
 
   onCleanup(() => {
     disposed = true;
     appImManager.removeEventListener('tab_changing', onTabChanging);
     overlayCounter.removeEventListener('change', onOverlayChange);
+    bodyObserver?.disconnect();
+    columnObserver?.disconnect();
     sliderObserver?.disconnect();
     players.forEach((player) => player.remove?.());
     players.clear();
   });
 
-  // What the highlight should fall back to when a surface on top goes away.
-  const surfaceUnderneath = (): TabId =>
-    reelsController.isOpen ? 'reels' : searchController.isOpen ? 'search' : 'chats';
-
   const closeSvipeSurfaces = () => {
     if(reelsController.isOpen) reelsController.close();
     if(searchController.isOpen) searchController.close();
+    if(profileController.isOpen) profileController.close();
   };
 
   const openChats = () => {
+    returnTo = undefined;
     closeSvipeSurfaces();
     appSidebarLeft.closeEverythingInside();
     appImManager.selectTab(APP_TABS.CHATLIST);
     setActive('chats');
+    update();
   };
 
   const openReels = (seedCode?: string) => {
+    returnTo = undefined;
     // A seeded (search-grid) reels surface counts as open — replace it.
     if(reelsController.isOpen) reelsController.close();
     if(searchController.isOpen) searchController.close();
+    if(profileController.isOpen) profileController.close();
     setActive('reels');
     reelsController.open({seedCode, onClose: () => setActive(surfaceUnderneath())});
+    update();
   };
 
   const openSearch = () => {
+    returnTo = undefined;
     if(reelsController.isOpen) {
       // A seeded reels surface may be covering the grid — closing it reveals it.
       reelsController.close();
@@ -160,31 +240,61 @@ export default function MobileTabBar() {
       searchController.scrollToTop();
       return;
     }
+    if(profileController.isOpen) profileController.close();
     setActive('search');
     if(!searchController.isOpen) {
       searchController.open({onClose: () => setActive(surfaceUnderneath())});
     }
+    update();
   };
 
-  // Settings and Profile live in the left-column slider (like the hamburger
-  // menu entries); the chat list must be the visible column first.
-  const openLeftSliderTab = async(tab: TabId, openTab: () => void) => {
+  const openSettings = async() => {
+    returnTo = undefined;
     closeSvipeSurfaces();
     appImManager.selectTab(APP_TABS.CHATLIST);
     if(appSidebarLeft.closeEverythingInside()) await pause(200);
-    openTab();
-    setActive(tab);
+    sliderRootTab = 'settings';
+    appSidebarLeft.createTab(AppSettingsTab).open();
+    setActive('settings');
+    update();
   };
 
-  const openSettings = () => openLeftSliderTab('settings', () => {
-    appSidebarLeft.createTab(AppSettingsTab).open();
-  });
+  // Profile action-row buttons hand off to left-slider tabs; when that stack
+  // closes, onColumnMutate reopens the profile surface (Android back-flow).
+  const onProfileAction = (action: ProfileAction) => {
+    profileController.close(false, true); // silent: keep the Profile highlight
+    appImManager.selectTab(APP_TABS.CHATLIST);
+    returnTo = 'profile';
+    if(action === 'settings') {
+      appSidebarLeft.createTab(AppSettingsTab).open();
+    } else if(action === 'contacts') {
+      appSidebarLeft.createTab(AppContactsTab).open();
+    } else {
+      // 'set-photo' and 'edit-info' both live in Edit Profile on web.
+      appSidebarLeft.createTab(AppEditProfileTab).open(getEditProfileInitArgs());
+    }
+    update();
+  };
 
-  const openProfile = () => openLeftSliderTab('profile', () => {
-    // Android's Profile tab = own ProfileActivity (header + posts grid); the
-    // closest web building block is the shared-media profile tab for self.
-    AppSharedMediaTab.open(appSidebarLeft, rootScope.myId, false);
-  });
+  const openProfileSurface = () => {
+    setActive('profile');
+    profileController.open({
+      onClose: () => {
+        setActive(surfaceUnderneath());
+        update();
+      },
+      onAction: onProfileAction
+    });
+    update();
+  };
+
+  const openProfile = () => {
+    returnTo = undefined;
+    closeSvipeSurfaces();
+    appSidebarLeft.closeEverythingInside();
+    appImManager.selectTab(APP_TABS.CHATLIST);
+    openProfileSurface();
+  };
 
   // Reels opens on boot: always when a share deep-link (?svipeReel) is present
   // (even on desktop), and by default on mobile (Reels is the landing tab).
@@ -214,13 +324,13 @@ export default function MobileTabBar() {
         if(active() !== 'settings') openSettings();
         break;
       case 'profile':
-        if(active() !== 'profile') openProfile();
+        if(!(profileController.isOpen && active() === 'profile')) openProfile();
         break;
     }
   };
 
   return (
-    <nav class="svipe-tabbar" classList={{'svipe-tabbar--overlay-hidden': overlayHidden()}}>
+    <nav class="svipe-tabbar" classList={{'svipe-tabbar--visible': visible()}}>
       <For each={TABS}>
         {(tab) => (
           <button

@@ -5,6 +5,9 @@ import type {FeedSeed, ReelItem} from './reelsFeed';
 import ReelsView from './reelsView';
 
 const OPEN_BODY_CLASS = 'svipe-reels-open';
+// Marks the Android "discover-seed" presentation (opened from the Search
+// grid): the tab bar reads it to stay hidden, like a pushed fragment.
+const SEEDED_BODY_CLASS = 'svipe-reels-seeded';
 
 export type ReelsOpenOptions = {
   /** svipe.uz/{code} share deep-link — resolved and shown first. */
@@ -42,6 +45,7 @@ class ReelsController {
 
     const mount = document.getElementById('reels-viewer') || getOverlayRoot();
     document.body.classList.add(OPEN_BODY_CLASS);
+    document.body.classList.toggle(SEEDED_BODY_CLASS, !!opts?.fromSearch);
 
     this.dispose = render(() => (
       <ReelsView
@@ -66,7 +70,7 @@ class ReelsController {
 
     this.dispose();
     this.dispose = undefined;
-    document.body.classList.remove(OPEN_BODY_CLASS);
+    document.body.classList.remove(OPEN_BODY_CLASS, SEEDED_BODY_CLASS);
 
     if(!fromPop) {
       appNavigationController.removeByType('reels', true);
