@@ -1,3 +1,8 @@
+@use "../../scss/mixins/respondTo" as *;
+
+// Android ReelsActivity design tokens: black root, #DD000000→transparent
+// bottom gradient, white rail icons with 12sp shadowed labels, liked heart
+// #FF2E38, follow pill #2F6DF6, seek played #1A9CFF.
 .svipe-reels {
   position: fixed;
   inset: 0;
@@ -5,6 +10,13 @@
   background: #000;
   color: #fff;
   overflow: hidden;
+
+  // Clearance for the floating bottom tab bar (60px bar + 8px margin).
+  --reels-inset: 16px;
+
+  @include respond-to(handhelds) {
+    --reels-inset: calc(68px + env(safe-area-inset-bottom));
+  }
 
   &__scroller {
     height: 100%;
@@ -21,9 +33,16 @@
     height: 100dvh;
     scroll-snap-align: start;
     scroll-snap-stop: always;
+    overflow: hidden;
+  }
+
+  &__media {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    touch-action: pan-y;
   }
 
   &__video {
@@ -31,9 +50,87 @@
     height: 100%;
     object-fit: contain;
     background: #000;
+    will-change: transform;
   }
 
-  &__topbar {
+  // Cover thumbnail: visible until the video's first frame (Android parity).
+  &__poster {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+
+    &--hidden {
+      display: none;
+    }
+
+    img, canvas, .media-container {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain;
+    }
+  }
+
+  &__buffer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  // Centered translucent circle + play triangle, only when user-paused.
+  &__pause-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, .4);
+    pointer-events: none;
+  }
+
+  // Double-tap heart burst: pop in, then rise and fade (Android 200/220/280ms).
+  &__burst {
+    position: fixed;
+    width: 110px;
+    height: 110px;
+    margin: -55px 0 0 -55px;
+    transform: rotate(-14deg);
+    pointer-events: none;
+    z-index: 3;
+    animation: svipe-burst .7s ease-out forwards;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  // Bottom gradient behind the rail/meta chrome.
+  &__shade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--reels-inset) + 240px);
+    background: linear-gradient(to top, rgba(0, 0, 0, .87), transparent);
+    pointer-events: none;
+  }
+
+  // Long-press "peek" / pinch-zoom: all chrome fades out (Android: 180ms).
+  &__chrome--hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity .18s ease;
+  }
+
+  &__top {
     position: absolute;
     top: 0;
     left: 0;
@@ -43,13 +140,8 @@
     align-items: center;
     justify-content: space-between;
     padding: max(8px, env(safe-area-inset-top)) 8px 8px;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, .45), transparent);
     pointer-events: none;
-  }
-
-  &__title {
-    font-weight: 600;
-    font-size: 17px;
+    transition: opacity .18s ease;
   }
 
   &__icon-btn {
@@ -61,7 +153,7 @@
     height: 40px;
     border: none;
     border-radius: 50%;
-    background: transparent;
+    background: rgba(0, 0, 0, .25);
     color: #fff;
     cursor: pointer;
 
@@ -69,6 +161,234 @@
       background: rgba(255, 255, 255, .12);
     }
   }
+
+  // ---- right action rail (Android: 56dp column, right margin 6dp) ----
+
+  &__rail {
+    position: absolute;
+    right: 6px;
+    bottom: calc(var(--reels-inset) + 30px);
+    z-index: 2;
+    width: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: opacity .18s ease;
+  }
+
+  &__rail-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: none;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &--dim {
+      opacity: .4;
+    }
+  }
+
+  &__rail-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .56);
+    margin: -2px 0 12px;
+    max-width: 56px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--dim {
+      opacity: .4;
+    }
+  }
+
+  // ---- bottom-left channel bar + caption (Android bottomBox) ----
+
+  &__meta {
+    position: absolute;
+    left: 14px;
+    right: 64px;
+    bottom: calc(var(--reels-inset) + 30px);
+    z-index: 2;
+    transition: opacity .18s ease;
+  }
+
+  &__channel {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  &__channel-avatar {
+    flex: none;
+    margin-right: 10px;
+    cursor: pointer;
+
+    .avatar {
+      width: 36px !important;
+      height: 36px !important;
+    }
+  }
+
+  &__channel-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-right: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .56);
+    cursor: pointer;
+
+    .peer-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__verified {
+    flex: none;
+    display: flex;
+
+    .verified-icon {
+      width: 17px;
+      height: 17px;
+    }
+  }
+
+  &__follow {
+    flex: none;
+    margin-left: 2px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 16px;
+    background: #2f6df6;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  &__caption {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.3;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .56);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+
+    &--expanded {
+      -webkit-line-clamp: 100;
+      max-height: 40vh;
+      overflow-y: auto;
+    }
+  }
+
+  // ---- seek bar (clips ≥ 15s; Android: 2.5px track, 5px while dragging) ----
+
+  &__seek {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--reels-inset) - 10px);
+    z-index: 2;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    touch-action: none;
+    transition: opacity .18s ease;
+  }
+
+  &__seek-track {
+    position: relative;
+    width: 100%;
+    height: 2.5px;
+    background: rgba(255, 255, 255, .25);
+    transition: height .12s;
+
+    .svipe-reels__seek--dragging & {
+      height: 5px;
+    }
+  }
+
+  &__seek-played {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: #1a9cff;
+  }
+
+  &__seek-thumb {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0;
+    transition: opacity .12s;
+
+    .svipe-reels__seek--dragging & {
+      opacity: 1;
+    }
+  }
+
+  // ---- ⋮ menu (Android ItemOptions rows) ----
+
+  &__menu-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+  }
+
+  &__menu {
+    position: absolute;
+    right: 12px;
+    bottom: calc(var(--reels-inset) + 96px);
+    min-width: 220px;
+    padding: 6px 0;
+    border-radius: 12px;
+    background: #1c1c1e;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+    animation: svipe-menu-in .14s ease-out;
+
+    button {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 15px;
+      text-align: left;
+      cursor: pointer;
+
+      &:active {
+        background: rgba(255, 255, 255, .08);
+      }
+    }
+  }
+
+  &__menu-danger {
+    color: #ff453a !important;
+  }
+
+  // ---- shared bits ----
 
   &__center {
     position: absolute;
@@ -100,4 +420,16 @@
 
 @keyframes svipe-reels-spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes svipe-burst {
+  0% { opacity: 0; transform: rotate(-14deg) scale(0); }
+  28% { opacity: 1; transform: rotate(-14deg) scale(1); }
+  60% { opacity: 1; transform: rotate(-14deg) scale(1.08) translateY(0); }
+  100% { opacity: 0; transform: rotate(-14deg) scale(1.25) translateY(-50px); }
+}
+
+@keyframes svipe-menu-in {
+  from { opacity: 0; transform: translateY(8px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }

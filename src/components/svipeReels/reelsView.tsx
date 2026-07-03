@@ -1,84 +1,102 @@
 import {createSignal, For, onCleanup, onMount, Show} from 'solid-js';
-import getDocumentURL from '@appManagers/utils/docs/getDocumentURL';
-import {getReelsFeed, getSeedReel, loadMoreReels, ReelItem} from './reelsFeed';
+import mediaSizes from '@helpers/mediaSizes';
+import {FeedSeed, getReelsFeed, getSeedReel, loadMoreReels, ReelItem} from './reelsFeed';
+import ReelPage from './reelPage';
 
 import './reelsView.scss';
+
+const PEEK_BODY_CLASS = 'svipe-reels-peek';
 
 /**
  * Full-screen, vertically-paged reels feed. Native CSS scroll-snap does the
  * TikTok-style paging; an IntersectionObserver decides which reel is on screen
- * and lazily wires that <video> to tweb's service-worker stream URL
- * (getDocumentURL -> 'stream/…'), playing the active one and pausing the rest.
+ * and each page wires its <video> to tweb's service-worker stream URL. All
+ * per-reel chrome and actions live in ReelPage (ported from Android's
+ * ReelsActivity); this component owns the feed, the active index, the global
+ * mute state (web-only, browsers block unmuted autoplay) and the seeded-mode
+ * back button.
  */
-export default function ReelsView(props: {seedCode?: string; onExit: () => void}) {
+export default function ReelsView(props: {
+  seedCode?: string;
+  seedReel?: ReelItem;
+  seed?: FeedSeed;
+  fromSearch?: boolean;
+  onExit: () => void;
+}) {
   const [items, setItems] = createSignal<ReelItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [failed, setFailed] = createSignal(false);
   const [muted, setMuted] = createSignal(true);
+  const [activeIndex, setActiveIndex] = createSignal(0);
+  const [peek, setPeekRaw] = createSignal(false);
 
-  const videoEls = new Map<number, HTMLVideoElement>();
   let observer: IntersectionObserver;
   let loadingMore = false;
 
+  const keyOf = (r: ReelItem) => r.peerId + '_' + r.mid;
+
+  const appendUnique = (more: ReelItem[]) => {
+    setItems((prev) => {
+      const seen = new Set(prev.map(keyOf));
+      return [...prev, ...more.filter((r) => !seen.has(keyOf(r)))];
+    });
+  };
+
   // Grow the feed as the viewer nears the end (backend cursor pagination).
-  const maybeLoadMore = async(activeIndex: number) => {
-    if(loadingMore || activeIndex < items().length - 3) return;
+  const maybeLoadMore = async(index: number) => {
+    if(loadingMore || index < items().length - 4) return;
     loadingMore = true;
     try {
       const more = await loadMoreReels();
-      if(more.length) setItems((prev) => [...prev, ...more]);
+      if(more.length) appendUnique(more);
     } finally {
       loadingMore = false;
     }
   };
 
-  const activate = (video: HTMLVideoElement) => {
-    if(!video.src) {
-      const url = video.dataset.streamUrl;
-      if(url) video.src = url;
-    }
-    video.muted = muted();
-    video.play().catch(() => {});
+  const setPeek = (v: boolean) => {
+    setPeekRaw(v);
+    // The tab bar (outside this tree) hides through this body class.
+    document.body.classList.toggle(PEEK_BODY_CLASS, v);
   };
 
-  const deactivate = (video: HTMLVideoElement) => {
-    video.pause();
-  };
-
-  const registerVideo = (video: HTMLVideoElement, item: ReelItem, index: number) => {
-    video.dataset.streamUrl = getDocumentURL(item.doc);
-    video.dataset.index = '' + index;
-    videoEls.set(index, video);
-    // The feed array is set once and never mutated, so per-item teardown isn't
-    // needed — the component-level onCleanup disconnects the observer and frees
-    // every element.
-    observer?.observe(video);
+  const registerSection = (el: HTMLElement, index: number) => {
+    el.dataset.index = '' + index;
+    observer?.observe(el);
   };
 
   onMount(async() => {
     observer = new IntersectionObserver((entries) => {
       for(const entry of entries) {
-        const video = entry.target as HTMLVideoElement;
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-          activate(video);
-          maybeLoadMore(Number(video.dataset.index || 0));
-        } else {
-          deactivate(video);
+          const index = Number((entry.target as HTMLElement).dataset.index || 0);
+          setActiveIndex(index);
+          maybeLoadMore(index);
         }
       }
-    }, {threshold: [0, 0.6, 1]});
+    }, {threshold: [0.6]});
 
     try {
-      // A shared reel (deep-link) is resolved first and shown at index 0; the
-      // scroll-snap scroller starts at the top so it plays immediately.
-      const seed = props.seedCode ? await getSeedReel(props.seedCode) : undefined;
-      const feed = await getReelsFeed();
-      const rest = seed ? feed.filter((r) => !(r.peerId === seed.peerId && r.mid === seed.mid)) : feed;
-      const all = seed ? [seed, ...rest] : feed;
-      setItems(all);
-      setFailed(all.length === 0);
+      // A seeded reel (explore-grid tap or share deep-link) is shown at index 0
+      // instantly; the backend continuation feed loads underneath it.
+      const seed = props.seedReel || (props.seedCode ? await getSeedReel(props.seedCode) : undefined);
+      if(seed) {
+        setItems([seed]);
+        setLoading(false);
+      }
+      const feedSeed = props.seed ||
+        (seed?.channelId && seed.serverMsgId ?
+          {channelId: seed.channelId, messageId: seed.serverMsgId, topicId: seed.topicId} :
+          undefined);
+      const feed = await getReelsFeed(feedSeed);
+      if(seed) {
+        appendUnique(feed);
+      } else {
+        setItems(feed);
+      }
+      setFailed(items().length === 0);
     } catch(e) {
-      setFailed(true);
+      setFailed(items().length === 0);
     } finally {
       setLoading(false);
     }
@@ -86,27 +104,29 @@ export default function ReelsView(props: {seedCode?: string; onExit: () => void}
 
   onCleanup(() => {
     observer?.disconnect();
-    videoEls.forEach((v) => {
-      v.pause();
-      v.removeAttribute('src');
-      v.load();
-    });
-    videoEls.clear();
+    document.body.classList.remove(PEEK_BODY_CLASS);
   });
 
-  const toggleMute = () => {
-    const next = !muted();
-    setMuted(next);
-    videoEls.forEach((v) => (v.muted = next));
+  const toggleMute = () => setMuted(!muted());
+
+  // Blocking a channel instantly removes all of its reels (Android parity;
+  // the BLOCK_CHANNEL event is sent by the page).
+  const onBlockChannel = (blocked: ReelItem) => {
+    setItems((prev) => prev.filter((r) => r.peerId !== blocked.peerId));
+    if(!items().length) setFailed(true);
   };
 
   return (
     <div class="svipe-reels">
-      <div class="svipe-reels__topbar">
-        <button class="svipe-reels__icon-btn" onClick={props.onExit} aria-label="Close">
-          <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
-        </button>
-        <span class="svipe-reels__title">Reels</span>
+      <div class="svipe-reels__top" classList={{'svipe-reels__chrome--hidden': peek()}}>
+        {/* Back arrow only in seeded (search) mode — Android parity. The main
+            reels tab has no X: the bottom tab bar is the exit. Desktop (no tab
+            bar) keeps the arrow so a deep-linked viewer can leave. */}
+        <Show when={props.fromSearch || !mediaSizes.isMobile} fallback={<span />}>
+          <button class="svipe-reels__icon-btn" onClick={props.onExit} aria-label="Back">
+            <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+          </button>
+        </Show>
         <button class="svipe-reels__icon-btn" onClick={toggleMute} aria-label="Toggle sound">
           <Show
             when={muted()}
@@ -133,16 +153,17 @@ export default function ReelsView(props: {seedCode?: string; onExit: () => void}
       <div class="svipe-reels__scroller">
         <For each={items()}>
           {(item, index) => (
-            <section class="svipe-reels__item">
-              <video
-                class="svipe-reels__video"
-                playsinline
-                loop
-                muted
-                preload="none"
-                ref={(el) => registerVideo(el, item, index())}
-              />
-            </section>
+            <ReelPage
+              item={item}
+              index={index()}
+              active={() => activeIndex() === index()}
+              muted={muted}
+              peek={peek()}
+              setPeek={setPeek}
+              registerSection={registerSection}
+              onBlockChannel={onBlockChannel}
+              onExitToChannel={props.onExit}
+            />
           )}
         </For>
       </div>

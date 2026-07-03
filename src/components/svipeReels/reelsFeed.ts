@@ -6,30 +6,49 @@ import {svipeGetJson} from '@lib/svipe/api';
 /**
  * A single item in the reels feed: a Telegram video, addressed by the peer it
  * lives in plus its (client-generated) message id, with the resolved Document
- * ready to hand to the stream engine.
+ * ready to hand to the stream engine, plus the raw backend reference so
+ * telemetry (/v1/events) and sharing can address it the way Android does.
  */
 export type ReelItem = {
   peerId: PeerId;
   mid: number;
   doc: Document.document;
   message: Message.message;
+  chatId?: ChatId;
+  username?: string;
+  // Raw backend reference (server-side ids, straight from /v1/feed|/v1/discover).
+  channelId?: number;
+  serverMsgId?: number;
+  topicId?: number;
+  shareUrl?: string;
+  recommendationId?: string;
+  feedPosition?: number;
 };
 
-type BackendFeedItem = {
+/** A backend item reference, shared by /v1/feed, /v1/discover and /v1/share. */
+export type DiscoverRef = {
   channel_id: number;
   message_id: number;
   username?: string | null;
+  topic_id?: number | null;
+  share_url?: string | null;
 };
 
 type BackendFeedResponse = {
-  items?: BackendFeedItem[];
+  items?: DiscoverRef[];
   next_cursor?: string | null;
+  recommendation_id?: string | null;
 };
+
+/** Seed for a continuation feed (Android's ReelsActivity.ofDiscoverSeed). */
+export type FeedSeed = {channelId: number; messageId: number; topicId?: number};
 
 // Cursor pagination state for the backend feed. undefined = not started,
 // string = more pages, null = exhausted.
 let nextCursor: string | null | undefined;
 let usingBackend = false;
+let feedPosition = 0;
+let currentRecommendationId: string | undefined;
 
 async function resolvePeer(username: string): Promise<{peerId: PeerId; chatId?: ChatId} | undefined> {
   const peer = await rootScope.managers.appUsersManager.resolveUsername(username);
@@ -41,7 +60,7 @@ async function resolvePeer(username: string): Promise<{peerId: PeerId; chatId?: 
   return {peerId: chatId.toPeerId(true), chatId};
 }
 
-async function messageToReel(peerId: PeerId, mid: number): Promise<ReelItem | undefined> {
+async function messageToReel(peerId: PeerId, mid: number, extras?: Partial<ReelItem>): Promise<ReelItem | undefined> {
   const message = await rootScope.managers.appMessagesManager.getMessageByPeer(peerId, mid);
   if(!message || message._ !== 'message') return undefined;
 
@@ -49,11 +68,14 @@ async function messageToReel(peerId: PeerId, mid: number): Promise<ReelItem | un
   if(doc?._ !== 'document') return undefined;
   if(!doc.mime_type?.startsWith('video')) return undefined;
 
-  return {peerId, mid, doc, message: message as Message.message};
+  return {peerId, mid, doc, message: message as Message.message, ...extras};
 }
 
-/** Resolve a backend {username, message_id} reference to a playable Telegram video. */
-async function resolveFeedItem(item: BackendFeedItem): Promise<ReelItem | undefined> {
+/**
+ * Resolve a backend {username, message_id} reference to a playable Telegram
+ * video. Shared by the reels feed, the explore grid tap and share deep-links.
+ */
+export async function resolveDiscoverRef(item: DiscoverRef, extras?: Partial<ReelItem>): Promise<ReelItem | undefined> {
   if(!item.username) return undefined;
 
   const resolved = await resolvePeer(item.username);
@@ -65,19 +87,75 @@ async function resolveFeedItem(item: BackendFeedItem): Promise<ReelItem | undefi
   // resolveUsername just cached).
   const mid = await rootScope.managers.appMessagesIdsManager.generateMessageId(item.message_id, chatId);
   await rootScope.managers.appMessagesManager.reloadMessages(peerId, [mid]);
-  return messageToReel(peerId, mid);
+  return messageToReel(peerId, mid, {
+    chatId,
+    username: item.username,
+    channelId: item.channel_id,
+    serverMsgId: item.message_id,
+    topicId: item.topic_id ?? undefined,
+    shareUrl: item.share_url ?? undefined,
+    ...extras
+  });
 }
 
-async function loadBackendPage(cursor?: string): Promise<ReelItem[]> {
-  const path = cursor ? `/v1/feed?cursor=${encodeURIComponent(cursor)}` : '/v1/feed';
-  const data = await svipeGetJson<BackendFeedResponse>(path);
+/**
+ * Resolve a page of backend refs with per-channel batching (Android's
+ * SvipeExploreGrid.resolveThumbnails): one resolveUsername + one
+ * reloadMessages per channel instead of per item. Returns items in the input
+ * order, with unresolvable refs as undefined.
+ */
+export async function resolveDiscoverRefsBatched(refs: DiscoverRef[]): Promise<(ReelItem | undefined)[]> {
+  const byUsername = new Map<string, {ref: DiscoverRef; index: number}[]>();
+  refs.forEach((ref, index) => {
+    const username = ref.username?.toLowerCase();
+    if(!username) return;
+    let group = byUsername.get(username);
+    if(!group) byUsername.set(username, group = []);
+    group.push({ref, index});
+  });
+
+  const out: (ReelItem | undefined)[] = new Array(refs.length).fill(undefined);
+  await Promise.all([...byUsername.entries()].map(async([username, group]) => {
+    try {
+      const resolved = await resolvePeer(username);
+      if(!resolved) return;
+      const {peerId, chatId} = resolved;
+
+      const mids = await Promise.all(group.map(({ref}) =>
+        rootScope.managers.appMessagesIdsManager.generateMessageId(ref.message_id, chatId)));
+      await rootScope.managers.appMessagesManager.reloadMessages(peerId, mids);
+
+      await Promise.all(group.map(async({ref, index}, i) => {
+        out[index] = await messageToReel(peerId, mids[i], {
+          chatId,
+          username: ref.username || undefined,
+          channelId: ref.channel_id,
+          serverMsgId: ref.message_id,
+          topicId: ref.topic_id ?? undefined,
+          shareUrl: ref.share_url ?? undefined
+        }).catch((): ReelItem | undefined => undefined);
+      }));
+    } catch(e) {
+      // leave the group unresolved
+    }
+  }));
+  return out;
+}
+
+async function loadBackendPage(query: string): Promise<ReelItem[]> {
+  const data = await svipeGetJson<BackendFeedResponse>('/v1/feed' + query);
   if(!data) throw new Error('svipe feed unavailable');
 
   nextCursor = data.next_cursor ?? null;
+  currentRecommendationId = data.recommendation_id ?? undefined;
 
   const items: ReelItem[] = [];
   for(const item of data.items || []) {
-    const reel = await resolveFeedItem(item).catch((): ReelItem | undefined => undefined);
+    const reel = await resolveDiscoverRef(item, {
+      recommendationId: currentRecommendationId,
+      feedPosition: feedPosition
+    }).catch((): ReelItem | undefined => undefined);
+    ++feedPosition;
     if(reel) items.push(reel);
   }
   return items;
@@ -100,7 +178,7 @@ function shuffle<T>(arr: T[]): T[] {
 async function loadSeedChannel(username: string): Promise<ReelItem[]> {
   const resolved = await resolvePeer(username);
   if(!resolved) return [];
-  const {peerId} = resolved;
+  const {peerId, chatId} = resolved;
 
   const history = await rootScope.managers.appMessagesManager.getHistory({
     peerId,
@@ -110,7 +188,7 @@ async function loadSeedChannel(username: string): Promise<ReelItem[]> {
 
   const items: ReelItem[] = [];
   for(const mid of history.history) {
-    const reel = await messageToReel(peerId, mid).catch((): ReelItem | undefined => undefined);
+    const reel = await messageToReel(peerId, mid, {chatId, username}).catch((): ReelItem | undefined => undefined);
     if(reel) items.push(reel);
   }
   return items;
@@ -123,12 +201,23 @@ async function getSeedFeed(): Promise<ReelItem[]> {
   return shuffle(perChannel.flat());
 }
 
-/** First page of the reels feed: the real recsys backend, seed channels as fallback. */
-export async function getReelsFeed(): Promise<ReelItem[]> {
+/**
+ * First page of the reels feed: the real recsys backend, seed channels as
+ * fallback. An optional seed (a tapped explore-grid cell) makes the backend
+ * condition the continuation on that video, mirroring Android's
+ * `/v1/feed?seed_channel_id=…&seed_message_id=…`.
+ */
+export async function getReelsFeed(seed?: FeedSeed): Promise<ReelItem[]> {
   nextCursor = undefined;
   usingBackend = false;
+  feedPosition = 0;
+  currentRecommendationId = undefined;
   try {
-    const items = await loadBackendPage();
+    const query = seed ?
+      `?seed_channel_id=${seed.channelId}&seed_message_id=${seed.messageId}` +
+        (seed.topicId ? `&seed_topic_id=${seed.topicId}` : '') :
+      '';
+    const items = await loadBackendPage(query);
     if(items.length) {
       usingBackend = true;
       return items;
@@ -146,10 +235,9 @@ export async function getReelsFeed(): Promise<ReelItem[]> {
 export async function getSeedReel(code: string): Promise<ReelItem | undefined> {
   try {
     // Share resolution is public reference data — no backend auth needed.
-    const ref = await svipeGetJson<BackendFeedItem>(`/v1/share/${encodeURIComponent(code)}`, false);
+    const ref = await svipeGetJson<DiscoverRef>(`/v1/share/${encodeURIComponent(code)}`, false);
     if(!ref) return undefined;
-    const reel = await resolveFeedItem(ref);
-    return reel;
+    return await resolveDiscoverRef(ref);
   } catch(e) {
     return undefined;
   }
@@ -159,7 +247,7 @@ export async function getSeedReel(code: string): Promise<ReelItem | undefined> {
 export async function loadMoreReels(): Promise<ReelItem[]> {
   if(!usingBackend || nextCursor === null || nextCursor === undefined) return [];
   try {
-    return await loadBackendPage(nextCursor);
+    return await loadBackendPage(`?cursor=${encodeURIComponent(nextCursor)}`);
   } catch(e) {
     return [];
   }

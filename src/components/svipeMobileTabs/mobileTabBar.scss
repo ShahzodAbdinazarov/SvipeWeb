@@ -4,12 +4,13 @@
   display: none;
 }
 
-// Only on phone widths, and only over the chat-list / reels surfaces — never
-// inside an open chat. selectTab() maintains body.is-left-column-shown; the
-// reels controller adds body.svipe-reels-open.
+// Only on phone widths, and only over the chat-list / reels / search surfaces —
+// never inside an open chat. selectTab() maintains body.is-left-column-shown;
+// the reels/search controllers add body.svipe-reels-open / body.svipe-search-open.
 @include respond-to(handhelds) {
   body.is-left-column-shown,
-  body.svipe-reels-open {
+  body.svipe-reels-open,
+  body.svipe-search-open {
     .svipe-tabbar {
       position: fixed;
       left: 50%;
@@ -38,6 +39,14 @@
   }
 }
 
+// Any dark overlay (stories viewer, media viewer, popups) sits at z-index 4
+// while the bar is z-5 — hide it entirely for the overlay's lifetime. Also
+// hidden during the reels long-press "peek" (Android hides all chrome).
+body.svipe-reels-peek .svipe-tabbar,
+.svipe-tabbar--overlay-hidden {
+  display: none !important;
+}
+
 .svipe-tabbar__tab {
   flex: 1 1 0;
   min-width: 0;
@@ -57,11 +66,6 @@
 
   &--active {
     color: var(--primary-color, #3390ec);
-  }
-
-  &--disabled {
-    opacity: .34;
-    cursor: default;
   }
 }
 
@@ -87,6 +91,14 @@
 
 .svipe-tabbar__icon--profile {
   color: rgba(255, 255, 255, .6);
+
+  // AvatarNew renders into the icon span (Android: 22dp avatar in the tab).
+  .avatar {
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 50%;
+    overflow: hidden;
+  }
 }
 
 .svipe-tabbar__svg {

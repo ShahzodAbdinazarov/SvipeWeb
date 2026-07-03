@@ -1,0 +1,138 @@
+// Hidden (not disposed) between tab switches: visibility keeps the scroller's
+// layout — and therefore its scroll position — unlike display: none.
+#svipe-search.svipe-search--hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.svipe-explore {
+  position: fixed;
+  inset: 0;
+  z-index: 3; // reels surface is z-4 (stacks above on cell tap), tab bar is z-5
+  background: #0f0f10;
+  color: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+
+  // Floating search pill: a button dressed as an input — tap hands off to the
+  // native chat-list search.
+  &__search {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    height: 46px;
+    z-index: 2;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 23px;
+    background: rgba(255, 255, 255, .08);
+    backdrop-filter: blur(20px) saturate(1.7);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+
+    color: rgba(255, 255, 255, .55);
+    font-family: inherit;
+    font-size: 16px;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active {
+      background: rgba(255, 255, 255, .12);
+    }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    // Top clears the floating search pill, bottom clears the floating tab bar.
+    padding:
+      calc(64px + env(safe-area-inset-top))
+      1px
+      calc(96px + env(safe-area-inset-bottom));
+  }
+
+  &__cell {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    // Shimmer under the thumbnail: stays visible until the images render, so
+    // a cell never shows black. Doubles as the skeleton cell.
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 1px;
+      border-radius: 3px;
+      background: linear-gradient(
+        100deg,
+        rgba(255, 255, 255, .06) 40%,
+        rgba(255, 255, 255, .12) 50%,
+        rgba(255, 255, 255, .06) 60%
+      );
+      background-size: 300% 100%;
+      animation: svipe-explore-shimmer 1.1s linear infinite;
+    }
+  }
+
+  // wrapVideo appends its thumb/full images into the cell container.
+  &__thumb {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &__puck {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top));
+    left: 50%;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(24, 24, 27, .9);
+    border: 1px solid rgba(255, 255, 255, .08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: transform .2s;
+
+    &--dragging {
+      transition: none;
+    }
+  }
+
+  &__puck-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, .25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: svipe-explore-spin .8s linear infinite;
+  }
+
+  &__sentinel {
+    height: 1px;
+  }
+}
+
+@keyframes svipe-explore-shimmer {
+  from { background-position-x: 150%; }
+  to { background-position-x: -150%; }
+}
+
+@keyframes svipe-explore-spin {
+  to { transform: rotate(360deg); }
+}
