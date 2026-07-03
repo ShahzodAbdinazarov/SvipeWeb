@@ -40,8 +40,18 @@ type Tab = {
 };
 
 const ICON_SIZE = 30;
-const ACTIVE_COLOR = (getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim() || '#3390ec');
-const INACTIVE_COLOR = 'rgba(255, 255, 255, 0.6)';
+
+// RLottiePlayer.setColor treats a STRING as a css-custom-property NAME (its
+// textColor path) — literal '#hex'/'rgba()' strings silently apply no tint at
+// all, leaving the Android JSONs' raw black. Colors must be [r, g, b] arrays.
+type Rgb = [number, number, number];
+const hexToRgb = (hex: string): Rgb => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const primary = (getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim() || '#3390ec');
+const ACTIVE_COLOR: Rgb = primary.startsWith('#') ? hexToRgb(primary) : [51, 144, 236];
+const INACTIVE_COLOR: Rgb = [166, 166, 166]; // ≈ white @60% on the dark pill
 
 const TABS: Tab[] = [
   {id: 'reels', label: 'Reels', lottie: 'reels', svg: 'M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm6 3.5v9l7-4.5-7-4.5z'},
@@ -92,17 +102,27 @@ export default function MobileTabBar() {
 
   const applyIconState = (player: RLottiePlayer, isActive: boolean) => {
     player.setColor(isActive ? ACTIVE_COLOR : INACTIVE_COLOR, true);
-    player.playToFrame({frame: isActive ? (player.maxFrame || 6) : 0});
+    const target = isActive ? (player.maxFrame || 6) : 0;
+    if(player.curFrame === target) {
+      // playToFrame no-ops on the same frame — re-tint the canvas in place.
+      player.applyColorForAllContexts();
+    } else {
+      player.playToFrame({frame: target});
+    }
   };
 
   const setupIcon = (container: HTMLElement, tab: Tab) => {
     if(tab.id === 'profile') {
       // Android shows the user's avatar in the Profile slot (GlassTabView.createAvatar).
-      const avatar = AvatarNew({peerId: rootScope.myId, size: 26, isDialog: false});
-      avatar.readyThumbPromise?.then(() => {
-        if(!disposed) container.classList.add('has-lottie');
-      }).catch(() => {});
-      container.append(avatar.node);
+      // Guarded: a failure here (e.g. myId not resolvable yet) must not kill
+      // the whole bar render — the person-SVG fallback stays instead.
+      try {
+        const avatar = AvatarNew({peerId: rootScope.myId, size: 26, isDialog: false});
+        avatar.readyThumbPromise?.then(() => {
+          if(!disposed) container.classList.add('has-lottie');
+        }).catch(() => {});
+        container.append(avatar.node);
+      } catch(e) {}
       return;
     }
     if(!tab.lottie) return;
