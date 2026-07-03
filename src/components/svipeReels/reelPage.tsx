@@ -14,6 +14,7 @@ import generateVerifiedIcon from '@components/generateVerifiedIcon';
 import {toast} from '@components/toast';
 import showReportAdPopup from '@components/popups/reportAd';
 import {classifyWatch, sendSvipeEvent} from '@lib/svipe/events';
+import svipeDebugLog from '@lib/svipe/debugOverlay';
 import searchController from '@components/svipeSearch/searchController';
 import type {ReelItem} from './reelsFeed';
 import ReelsCommentsSheet from './reelsCommentsSheet';
@@ -400,6 +401,7 @@ export default function ReelPage(props: {
     video.addEventListener('playing', () => {
       setBuffering(false);
       setPosterHidden(true);
+      svipeDebugLog(`video playing: #${props.index}`);
     });
     video.addEventListener('waiting', () => setBuffering(true));
     video.addEventListener('durationchange', () => setDuration(video.duration || 0));

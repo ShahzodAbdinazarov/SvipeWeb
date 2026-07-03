@@ -1,5 +1,6 @@
 import {createSignal, For, onCleanup, onMount, Show} from 'solid-js';
 import mediaSizes from '@helpers/mediaSizes';
+import svipeDebugLog from '@lib/svipe/debugOverlay';
 import {FeedSeed, getReelsFeed, getSeedReel, loadMoreReels, ReelItem} from './reelsFeed';
 import ReelPage from './reelPage';
 
@@ -92,6 +93,7 @@ export default function ReelsView(props: {
       // Progressive: render each ordered prefix as it resolves so the first
       // reel plays within a few round-trips instead of after the whole page.
       const applyFeed = (feed: ReelItem[]) => {
+        svipeDebugLog(`feed prefix: ${feed.length} items`);
         if(seed) {
           const key = seed.peerId + '_' + seed.mid;
           setItems([seed, ...feed.filter((r) => keyOf(r) !== key)]);
@@ -101,7 +103,9 @@ export default function ReelsView(props: {
         if(feed.length) setLoading(false);
       };
 
+      svipeDebugLog('feed: fetching');
       const feed = await getReelsFeed(feedSeed, applyFeed);
+      svipeDebugLog(`feed: done (${feed.length})`);
       applyFeed(feed);
       setFailed(items().length === 0);
     } catch(e) {

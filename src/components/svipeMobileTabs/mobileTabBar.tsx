@@ -15,6 +15,7 @@ import reelsController from '@components/svipeReels/reelsController';
 import searchController from '@components/svipeSearch/searchController';
 import profileController from '@components/svipeProfile/profileController';
 import type {ProfileAction} from '@components/svipeProfile/profileView';
+import svipeDebugLog from '@lib/svipe/debugOverlay';
 
 import './mobileTabBar.scss';
 
@@ -209,9 +210,27 @@ export default function MobileTabBar() {
 
       const sliderEl = columnLeft.querySelector('.sidebar-slider');
       if(sliderEl) {
-        // Fires on tab transitions (push/pop) and on is-search-active flips.
-        sliderObserver = new MutationObserver(update);
-        sliderObserver.observe(sliderEl, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']});
+        // Fires on tab pushes (new direct child) and active-tab flips. NOT a
+        // subtree observer: the chat list lives inside the first slider tab
+        // and generates thousands of mutation records during bootstrap.
+        sliderObserver = new MutationObserver((records) => {
+          for(const record of records) {
+            record.addedNodes?.forEach((node) => {
+              if(node instanceof Element) sliderObserver.observe(node, {attributes: true, attributeFilter: ['class']});
+            });
+          }
+          update();
+        });
+        sliderObserver.observe(sliderEl, {childList: true, attributes: true, attributeFilter: ['class']});
+        for(const child of Array.from(sliderEl.children)) {
+          sliderObserver.observe(child, {attributes: true, attributeFilter: ['class']});
+        }
+      }
+
+      // The chat-list search flag flips on a specific element — watch just it.
+      const searchEl = searchHostEl();
+      if(searchEl) {
+        sliderObserver?.observe(searchEl, {attributes: true, attributeFilter: ['class']});
       }
     }
 
@@ -338,6 +357,7 @@ export default function MobileTabBar() {
   });
 
   const onTabClick = (tab: Tab) => {
+    svipeDebugLog(`click handler: ${tab.id}`);
     switch(tab.id) {
       case 'reels':
         if(!(reelsController.isOpen && active() === 'reels')) openReels();
