@@ -48,7 +48,10 @@ export default function ProfileView(props: {onAction: (action: ProfileAction) =>
 
   onMount(async() => {
     // The whole page scrolls as one column (Android's profile list view).
-    const scrollable = new Scrollable(rootEl, 'SVIPE-PROFILE');
+    // The already-rendered div is passed as Scrollable's container — passing
+    // it as `el` would re-parent the children and orphan Solid's <Show>
+    // anchors, scattering late-rendered nodes (the info card) over the page.
+    const scrollable = new Scrollable(undefined, 'SVIPE-PROFILE', 300, undefined, rootEl);
 
     const {render: storiesList, actions} = StoriesProfileList({
       peerId: myId,
@@ -83,7 +86,7 @@ export default function ProfileView(props: {onAction: (action: ProfileAction) =>
 
   return (
     <div class="svipe-profile">
-      <div class="svipe-profile__content" ref={rootEl}>
+      <div class="svipe-profile__scroll" ref={rootEl}>
         <div class="svipe-profile__header">
           <span class="svipe-profile__avatar">{avatar.node}</span>
           <div class="svipe-profile__name">{title.element}</div>

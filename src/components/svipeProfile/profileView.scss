@@ -7,13 +7,12 @@
   background: #0f0f10;
   color: #fff;
 
-  &__content {
+  // This div IS the Scrollable container (classes scrollable/scrollable-y
+  // are added at runtime); position it explicitly since it's absolutely
+  // positioned by tweb's .scrollable rules.
+  &__scroll {
     height: 100%;
-
-    // Scrollable wraps the content into its own .scrollable container.
-    .scrollable {
-      padding: calc(16px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom));
-    }
+    padding: calc(16px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom));
   }
 
   &__header {

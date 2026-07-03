@@ -123,8 +123,12 @@ export default function MobileTabBar() {
     }).catch(() => {/* keep the SVG fallback */});
   };
 
-  // Animate every loaded icon when the active tab changes.
+  // Animate every loaded icon when the active tab changes — and re-apply on
+  // every re-show: while the bar is display:none the rlottie players are
+  // paused/skipped, so tint/frame changes made then never hit the canvas
+  // (icons were stuck black or on a stale active color).
   createEffect(() => {
+    if(!visible()) return;
     const cur = active();
     players.forEach((player, id) => applyIconState(player, id === cur));
   });
