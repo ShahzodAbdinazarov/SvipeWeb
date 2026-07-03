@@ -88,12 +88,21 @@ export default function ReelsView(props: {
         (seed?.channelId && seed.serverMsgId ?
           {channelId: seed.channelId, messageId: seed.serverMsgId, topicId: seed.topicId} :
           undefined);
-      const feed = await getReelsFeed(feedSeed);
-      if(seed) {
-        appendUnique(feed);
-      } else {
-        setItems(feed);
-      }
+
+      // Progressive: render each ordered prefix as it resolves so the first
+      // reel plays within a few round-trips instead of after the whole page.
+      const applyFeed = (feed: ReelItem[]) => {
+        if(seed) {
+          const key = seed.peerId + '_' + seed.mid;
+          setItems([seed, ...feed.filter((r) => keyOf(r) !== key)]);
+        } else {
+          setItems(feed);
+        }
+        if(feed.length) setLoading(false);
+      };
+
+      const feed = await getReelsFeed(feedSeed, applyFeed);
+      applyFeed(feed);
       setFailed(items().length === 0);
     } catch(e) {
       setFailed(items().length === 0);

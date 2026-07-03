@@ -327,7 +327,11 @@ export default function MobileTabBar() {
     if(reelsController.isOpen) return;
     const seedCode = new URLSearchParams(location.search).get('svipeReel') || undefined;
     if(seedCode || mediaSizes.isMobile) {
-      openReels(seedCode);
+      // Deferred past the bootstrap frame: the chat list gets its first paint
+      // and input wiring before the reels surface starts resolving its feed.
+      requestAnimationFrame(() => {
+        if(!reelsController.isOpen) openReels(seedCode);
+      });
     } else {
       setActive('chats');
     }

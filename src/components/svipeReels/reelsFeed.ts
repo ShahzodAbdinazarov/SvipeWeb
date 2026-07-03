@@ -142,23 +142,63 @@ export async function resolveDiscoverRefsBatched(refs: DiscoverRef[]): Promise<(
   return out;
 }
 
-async function loadBackendPage(query: string): Promise<ReelItem[]> {
+/**
+ * Resolve refs with bounded parallelism, emitting the ORDERED prefix as it
+ * completes. Strictly sequential resolution (3-4 MTProto round-trips × a full
+ * page) kept the boot-time reels surface on its spinner for many seconds —
+ * the app looked frozen until the first video played. Parallel workers cut
+ * the total wall-clock ~4×, and the prefix callback lets the viewer start
+ * playing item 0 as soon as it alone is ready.
+ */
+async function resolveRefsOrdered(
+  refs: DiscoverRef[],
+  extrasFor: (ref: DiscoverRef, i: number) => Partial<ReelItem>,
+  onPrefix?: (items: ReelItem[]) => void
+): Promise<ReelItem[]> {
+  const CONCURRENCY = 4;
+  const results: (ReelItem | null | undefined)[] = new Array(refs.length).fill(undefined);
+  const emitted: ReelItem[] = [];
+  let nextEmit = 0;
+  let cursor = 0;
+
+  const emit = () => {
+    let grew = false;
+    while(nextEmit < refs.length && results[nextEmit] !== undefined) {
+      const item = results[nextEmit++];
+      if(item) {
+        emitted.push(item);
+        grew = true;
+      }
+    }
+    if(grew) onPrefix?.(emitted.slice());
+  };
+
+  await Promise.all(new Array(Math.min(CONCURRENCY, refs.length)).fill(0).map(async() => {
+    while(cursor < refs.length) {
+      const i = cursor++;
+      results[i] = (await resolveDiscoverRef(refs[i], extrasFor(refs[i], i))
+      .catch((): ReelItem | undefined => undefined)) ?? null;
+      emit();
+    }
+  }));
+  return emitted;
+}
+
+async function loadBackendPage(query: string, onPrefix?: (items: ReelItem[]) => void): Promise<ReelItem[]> {
   const data = await svipeGetJson<BackendFeedResponse>('/v1/feed' + query);
   if(!data) throw new Error('svipe feed unavailable');
 
   nextCursor = data.next_cursor ?? null;
   currentRecommendationId = data.recommendation_id ?? undefined;
 
-  const items: ReelItem[] = [];
-  for(const item of data.items || []) {
-    const reel = await resolveDiscoverRef(item, {
-      recommendationId: currentRecommendationId,
-      feedPosition: feedPosition
-    }).catch((): ReelItem | undefined => undefined);
-    ++feedPosition;
-    if(reel) items.push(reel);
-  }
-  return items;
+  const refs = data.items || [];
+  const basePosition = feedPosition;
+  feedPosition += refs.length;
+  const recommendationId = currentRecommendationId;
+  return resolveRefsOrdered(refs, (ref, i) => ({
+    recommendationId,
+    feedPosition: basePosition + i
+  }), onPrefix);
 }
 
 // ---- Seed fallback: public channels over MTProto, used only if the backend
@@ -207,7 +247,7 @@ async function getSeedFeed(): Promise<ReelItem[]> {
  * condition the continuation on that video, mirroring Android's
  * `/v1/feed?seed_channel_id=…&seed_message_id=…`.
  */
-export async function getReelsFeed(seed?: FeedSeed): Promise<ReelItem[]> {
+export async function getReelsFeed(seed?: FeedSeed, onPrefix?: (items: ReelItem[]) => void): Promise<ReelItem[]> {
   nextCursor = undefined;
   usingBackend = false;
   feedPosition = 0;
@@ -217,7 +257,7 @@ export async function getReelsFeed(seed?: FeedSeed): Promise<ReelItem[]> {
       `?seed_channel_id=${seed.channelId}&seed_message_id=${seed.messageId}` +
         (seed.topicId ? `&seed_topic_id=${seed.topicId}` : '') :
       '';
-    const items = await loadBackendPage(query);
+    const items = await loadBackendPage(query, onPrefix);
     if(items.length) {
       usingBackend = true;
       return items;
